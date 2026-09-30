@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion, Reorder } from 'framer-motion';
 import { AlignLeft, Disc, GripVertical, LockKeyhole, LockKeyholeOpen, Music, Plus, Star, Trash2, X } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 import Button from '@/components/ui/atoms/Button';
 import IconButton from '@/components/ui/atoms/IconButton';
 import Input from '@/components/ui/atoms/Input';
@@ -250,6 +251,9 @@ export default function MusicListForm({
     <div className="flex items-center justify-center">
       <motion.div className="relative w-full rounded-2xl border border-gray-800 bg-[#121212] py-5 px-3 md:p-8">
         <h2 className="mb-6 font-sans text-2xl font-bold text-neon-point">{pageTitle}</h2>
+        <Link href="/editor-preview" target="_blank" rel="noopener noreferrer" className="mb-4 inline-flex text-sm text-gray-400 underline underline-offset-4 hover:text-white">
+          새 본문 에디터 미리보기 ↗
+        </Link>
 
         <div className="flex flex-col items-end justify-between sm:flex-row sm:items-center">
           <div className={`w-full ${lockType ? 'pointer-events-none opacity-70' : ''}`}>

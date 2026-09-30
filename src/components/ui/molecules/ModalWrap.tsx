@@ -10,6 +10,8 @@ interface ModalWrapProps {
   onClose?: () => void;
   panelClassName?: string;
   showCloseButton?: boolean;
+  overlayClassName?: string;
+  ariaLabel?: string;
 }
 
 export default function ModalWrap({
@@ -17,6 +19,8 @@ export default function ModalWrap({
   onClose,
   panelClassName,
   showCloseButton = false,
+  overlayClassName = 'z-50',
+  ariaLabel,
 }: ModalWrapProps) {
   const router = useRouter();
   const handleClose = useCallback(() => {
@@ -44,10 +48,11 @@ export default function ModalWrap({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm md:items-center md:p-6"
+      className={`fixed inset-0 flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm md:items-center md:p-6 ${overlayClassName}`}
       onClick={handleClose}
       role="dialog"
       aria-modal="true"
+      aria-label={ariaLabel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
