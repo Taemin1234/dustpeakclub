@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import type { Prisma } from '../../generated/prisma/client';
 import { createSupabaseServerClient } from '@/utils/supabase/server';
 import { normalizeTextBlockContent } from '@/lib/music-list-content';
+import { normalizeRichTextDocument, richTextPlainText } from '@/lib/rich-text-content';
 import type { MusicListContentBlock, StoredMusicListContentBlock } from '@/types/music-list-content';
 
 export type VisibilityValue = 'PUBLIC' | 'PRIVATE';
@@ -74,7 +75,7 @@ export async function upsertDbUser(user: {
 // 태그 정리
 export function cleanTags(tags: string[] | undefined): string[] {
   if (!Array.isArray(tags)) return [];
-  return [...new Set(tags.map((tag) => tag.replace(/\s+/g, '')).filter(Boolean))].slice(0, 10);
+  return [...new Set(tags.filter((tag) => typeof tag === 'string').map((tag) => tag.replace(/\s+/g, '')).filter(Boolean))].slice(0, 10);
 }
 
 export function cleanFeaturedSectionIds(sectionIds: string[] | undefined): string[] {
@@ -108,33 +109,50 @@ export function validateAndNormalizeListPayload(
   body: ListPayloadInput,
   options: { expectedType: ListEntityType; requireType: boolean }
 ): { data?: NormalizedListPayload; error?: string } {
-  const title = body.title?.trim();
+  if (!body || typeof body !== 'object') return { error: 'invalid payload' };
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
   if (!title) {
     return { error: 'title is required' };
   }
   if (!Array.isArray(body.contentBlocks)) {
     return { error: 'contentBlocks is required' };
   }
+  if (body.contentBlocks.length > 500) return { error: '본문 블록은 500개 이하로 작성해주세요.' };
+  if (JSON.stringify(body.contentBlocks).length > 1000000) return { error: '본문 데이터 크기가 너무 큽니다.' };
 
   const usedIds = new Set<string>();
   const usedMusicIds = new Set<string>();
   const normalizedBlocks: StoredMusicListContentBlock[] = [];
   const musicItems: MusicItemPayload[] = [];
+  let contentError: string | undefined;
 
   body.contentBlocks.forEach((block, index) => {
-    if (!block || typeof block !== 'object') return;
+    if (!block || typeof block !== 'object') { contentError = 'invalid content block'; return; }
     const requestedId = typeof block.id === 'string' ? block.id.trim().slice(0, 100) : '';
     let id = requestedId || `content-block-${index}`;
     if (usedIds.has(id)) id = `${id}-${index}`;
     usedIds.add(id);
 
     if (block.type === 'text') {
+      if (block.document !== undefined) {
+        try {
+          const document = normalizeRichTextDocument(block.document);
+          const content = normalizeTextBlockContent(richTextPlainText(document));
+          normalizedBlocks.push({ id, type: 'text', content, document });
+        } catch (error) { contentError = error instanceof Error ? error.message : 'invalid rich text'; }
+        return;
+      }
+      if (typeof block.content !== 'string') { contentError = 'invalid text block'; return; }
       const content = typeof block.content === 'string' ? normalizeTextBlockContent(block.content) : '';
       if (content.trim()) normalizedBlocks.push({ id, type: 'text', content });
       return;
     }
 
     if (block.type === 'music' && block.item) {
+      if (block.kind !== undefined && block.kind !== options.expectedType) {
+        contentError = options.expectedType === 'track' ? '플레이리스트에는 곡만 추가할 수 있습니다.' : '앨범리스트에는 앨범만 추가할 수 있습니다.';
+        return;
+      }
       const item = block.item;
       if (
         typeof item.id === 'string' && item.id.trim()
@@ -144,28 +162,31 @@ export function validateAndNormalizeListPayload(
       ) {
         const normalizedItem = {
           id: item.id.trim(),
-          name: item.spotifyName?.trim() || item.name.trim(),
-          artist: item.spotifyArtistName?.trim() || item.artist.trim(),
+          name: typeof item.spotifyName === 'string' && item.spotifyName.trim() || item.name.trim(),
+          artist: typeof item.spotifyArtistName === 'string' && item.spotifyArtistName.trim() || item.artist.trim(),
           albumImageUrl: item.albumImageUrl.trim(),
-          artistId: item.artistId?.trim() || undefined,
-          albumId: item.albumId?.trim() || undefined,
-          spotifyName: item.spotifyName?.trim() || item.name.trim(),
-          spotifyArtistName: item.spotifyArtistName?.trim() || item.artist.trim(),
-          spotifyAlbumName: item.spotifyAlbumName?.trim() || undefined,
+          artistId: typeof item.artistId === 'string' ? item.artistId.trim() || undefined : undefined,
+          albumId: typeof item.albumId === 'string' ? item.albumId.trim() || undefined : undefined,
+          spotifyName: typeof item.spotifyName === 'string' && item.spotifyName.trim() || item.name.trim(),
+          spotifyArtistName: typeof item.spotifyArtistName === 'string' && item.spotifyArtistName.trim() || item.artist.trim(),
+          spotifyAlbumName: typeof item.spotifyAlbumName === 'string' ? item.spotifyAlbumName.trim() || undefined : undefined,
         };
-        if (usedMusicIds.has(normalizedItem.id)) return;
-        usedMusicIds.add(normalizedItem.id);
         normalizedBlocks.push({ id, type: 'music', musicId: normalizedItem.id });
-        musicItems.push(normalizedItem);
-      }
+        if (!usedMusicIds.has(normalizedItem.id)) musicItems.push(normalizedItem);
+        usedMusicIds.add(normalizedItem.id);
+      } else contentError = 'invalid music card';
+      return;
     }
+    contentError = 'invalid content block';
   });
+  if (contentError) return { error: contentError };
 
   const story = normalizedBlocks
     .filter((block): block is Extract<StoredMusicListContentBlock, { type: 'text' }> => block.type === 'text')
     .map((block) => block.content.trim())
     .join('\n\n');
   const uniqueItems = uniqueMusicItems(musicItems);
+  if (story.length > 100000) return { error: '본문은 100,000자 이하로 작성해주세요.' };
 
   if (!story) return { error: 'at least one text block is required' };
   if (uniqueItems.length === 0) return { error: 'at least one music block is required' };

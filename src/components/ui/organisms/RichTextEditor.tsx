@@ -7,6 +7,7 @@ import { Bold, Italic, Heading2, Heading3, List, ListOrdered, Quote, Link as Lin
 import { MusicCardNode } from './editor/MusicCardNode';
 import MusicSearchDialog from './editor/MusicSearchDialog';
 import type { SelectionBookmark } from '@tiptap/pm/state';
+import type { RichTextDocument } from '@/types/music-list-content';
 
 const editorContentClassName = [
   'min-h-[300px] p-4 text-sm leading-[1.9] text-gray-300 outline-none whitespace-pre-wrap [overflow-wrap:anywhere] sm:min-h-[360px] sm:p-6 sm:text-base',
@@ -22,7 +23,13 @@ const editorContentClassName = [
   '[&_hr]:my-[1.5em] [&_hr]:border-t [&_hr]:border-white/15',
 ].join(' ');
 
-export default function RichTextEditor() {
+interface RichTextEditorProps {
+  initialContent?: RichTextDocument;
+  onChange?: (document: RichTextDocument) => void;
+  musicKind?: 'track' | 'album';
+}
+
+export default function RichTextEditor({ initialContent, onChange, musicKind }: RichTextEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [StarterKit.configure({
@@ -30,14 +37,15 @@ export default function RichTextEditor() {
       codeBlock: false,
       link: { openOnClick: false, defaultProtocol: 'https', protocols: ['http', 'https'] },
     }), MusicCardNode],
-    content: '<h2>음악과 함께 쓰는 이야기</h2><p>여기에 글을 작성해보세요. 문장을 선택한 뒤 <strong>굵게</strong> 또는 <em>기울임</em>을 적용할 수 있습니다.</p><p>소제목과 목록으로 내용을 정리하고, 인용문으로 기억에 남는 문장을 강조해보세요.</p>',
+    content: initialContent ?? { type: 'doc', content: [{ type: 'paragraph' }] },
+    onUpdate: ({ editor }) => onChange?.(editor.getJSON() as RichTextDocument),
     editorProps: { attributes: { class: editorContentClassName, role: 'textbox', 'aria-label': '본문 편집', 'aria-multiline': 'true' } },
   });
   if (!editor) return <div className="min-h-80 rounded-xl border border-white/10 p-5 text-gray-400">에디터를 불러오는 중입니다.</div>;
-  return <ReadyEditor editor={editor} />;
+  return <ReadyEditor editor={editor} musicKind={musicKind} />;
 }
 
-function ReadyEditor({ editor }: { editor: Editor }) {
+function ReadyEditor({ editor, musicKind }: { editor: Editor; musicKind?: 'track' | 'album' }) {
   const [musicSearch, setMusicSearch] = useState<{ kind: 'track' | 'album'; bookmark: SelectionBookmark } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [url, setUrl] = useState('');
@@ -94,12 +102,12 @@ function ReadyEditor({ editor }: { editor: Editor }) {
       </div>
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
         <span className="text-xs text-gray-500">음악 카드</span>
-        <button type="button" onMouseDown={(event) => event.preventDefault()}
+        {musicKind !== 'album' && <button type="button" onMouseDown={(event) => event.preventDefault()}
           onClick={() => setMusicSearch({ kind: 'track', bookmark: editor.state.selection.getBookmark() })}
-          className="rounded-md border border-white/15 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10">곡 추가</button>
-        <button type="button" onMouseDown={(event) => event.preventDefault()}
+          className="rounded-md border border-white/15 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10">곡 추가</button>}
+        {musicKind !== 'track' && <button type="button" onMouseDown={(event) => event.preventDefault()}
           onClick={() => setMusicSearch({ kind: 'album', bookmark: editor.state.selection.getBookmark() })}
-          className="rounded-md border border-white/15 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10">앨범 추가</button>
+          className="rounded-md border border-white/15 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10">앨범 추가</button>}
       </div>
       {linkOpen && <div className="border-b border-white/10 p-3">
         <div className="flex flex-wrap items-center gap-2">

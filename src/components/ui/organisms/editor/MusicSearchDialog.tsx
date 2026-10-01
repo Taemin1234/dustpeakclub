@@ -71,6 +71,11 @@ export default function MusicSearchDialog({ editor, kind, bookmark, onClose }: M
     else setError('이 위치에 카드를 추가할 수 없습니다. 본문에서 다른 위치를 선택해주세요.');
   };
   const trapFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Enter in search must not submit the enclosing post form.
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+      event.preventDefault();
+      return;
+    }
     if (event.key !== 'Tab') return;
     const elements = panelRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex="0"]');
     if (!elements?.length) return;

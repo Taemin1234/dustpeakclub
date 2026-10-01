@@ -916,7 +916,10 @@ export async function fetchPlaylistDetail(
     id: playlist.id,
     title: playlist.title,
     story: playlist.story,
-    contentBlocks: parseStoredContentBlocks(playlist.contentBlocks),
+    contentBlocks: parseStoredContentBlocks(playlist.contentBlocks, {
+      story: playlist.story,
+      musicIds: playlist.tracks.map((entry) => entry.track.spotifyId),
+    }),
     visibility: playlist.visibility,
     viewCount: playlist.viewCount,
     author: {
@@ -1056,7 +1059,10 @@ export async function fetchAlbumListDetail(
     id: albumList.id,
     title: albumList.title,
     story: albumList.story,
-    contentBlocks: parseStoredContentBlocks(albumList.contentBlocks),
+    contentBlocks: parseStoredContentBlocks(albumList.contentBlocks, {
+      story: albumList.story,
+      musicIds: albumList.albums.map((entry) => entry.album.spotifyId),
+    }),
     visibility: albumList.visibility,
     viewCount: albumList.viewCount,
     author: {

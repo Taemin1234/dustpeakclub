@@ -1,4 +1,5 @@
 import type { StoredMusicListContentBlock } from '@/types/music-list-content';
+import { normalizeRichTextDocument, richTextPlainText } from '@/lib/rich-text-content';
 
 const MAX_CONSECUTIVE_LINE_BREAKS = 5;
 
@@ -10,10 +11,14 @@ export function normalizeTextBlockContent(value: string): string {
     .replace(/[^\S\n]+$/, '');
 }
 
-export function parseStoredContentBlocks(value: unknown): StoredMusicListContentBlock[] {
-  if (!Array.isArray(value)) return [];
+export function parseStoredContentBlocks(value: unknown, fallback?: { story: string; musicIds: string[] }): StoredMusicListContentBlock[] {
+  const legacyBlocks = (): StoredMusicListContentBlock[] => fallback ? [
+    ...(fallback.story ? [{ id: 'legacy-story', type: 'text' as const, content: fallback.story }] : []),
+    ...fallback.musicIds.map((musicId, index) => ({ id: `legacy-music-${index}`, type: 'music' as const, musicId })),
+  ] : [];
+  if (!Array.isArray(value)) return legacyBlocks();
 
-  return value.flatMap<StoredMusicListContentBlock>((block, index) => {
+  const blocks = value.flatMap<StoredMusicListContentBlock>((block, index) => {
     if (!block || typeof block !== 'object') return [];
     const candidate = block as Record<string, unknown>;
     const id = typeof candidate.id === 'string' && candidate.id.trim()
@@ -21,6 +26,12 @@ export function parseStoredContentBlocks(value: unknown): StoredMusicListContent
       : `content-block-${index}`;
 
     if (candidate.type === 'text' && typeof candidate.content === 'string') {
+      if (candidate.document !== undefined) {
+        try {
+          const document = normalizeRichTextDocument(candidate.document);
+          return [{ id, type: 'text', content: richTextPlainText(document), document }];
+        } catch { /* Preserve the plain text fallback for older or damaged documents. */ }
+      }
       return [{ id, type: 'text', content: candidate.content }];
     }
     if (candidate.type === 'music' && typeof candidate.musicId === 'string' && candidate.musicId.trim()) {
@@ -28,4 +39,5 @@ export function parseStoredContentBlocks(value: unknown): StoredMusicListContent
     }
     return [];
   });
+  return blocks.length ? blocks : legacyBlocks();
 }

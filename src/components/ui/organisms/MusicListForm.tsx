@@ -1,19 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AnimatePresence, motion, Reorder } from 'framer-motion';
-import { AlignLeft, Disc, GripVertical, LockKeyhole, LockKeyholeOpen, Music, Plus, Star, Trash2, X } from 'lucide-react';
-import Image from 'next/image';
-import Link from 'next/link';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Disc, LockKeyhole, LockKeyholeOpen, Music, Star, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/atoms/Button';
-import IconButton from '@/components/ui/atoms/IconButton';
 import Input from '@/components/ui/atoms/Input';
-import Textarea from '@/components/ui/atoms/Textarea';
-import ModalWrap from '@/components/ui/molecules/ModalWrap';
 import SearchBar from '@/components/ui/molecules/SearchBar';
 import TypeSelector from '@/components/ui/molecules/TypeSelector';
-import SearchMusic from '@/components/ui/organisms/SearchMusic';
+import RichTextEditor from '@/components/ui/organisms/RichTextEditor';
+import { contentBlocksToEditorDocument, editorDocumentToContentBlocks } from '@/lib/rich-text-content';
 import type { FeaturedSectionOption } from '@/lib/music-lists';
 import type { MusicContentItem, MusicListContentBlock } from '@/types/music-list-content';
 
@@ -68,13 +64,9 @@ export default function MusicListForm({
   const router = useRouter();
 
   const [searchType, setSearchType] = useState<SearchType>(initialType);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<MusicListFormItem[]>([]);
   const [contentBlocks, setContentBlocks] = useState<MusicListContentBlock[]>(
     initialValues?.contentBlocks?.length ? initialValues.contentBlocks : [createTextBlock('initial-text-block')]
   );
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [featuredSectionIds, setFeaturedSectionIds] = useState<string[]>([]);
@@ -93,41 +85,7 @@ export default function MusicListForm({
   const handleTypeChange = (type: SearchType) => {
     if (lockType) return;
     setSearchType(type);
-    setSearchQuery('');
-    setSearchResults([]);
     setContentBlocks([createTextBlock()]);
-  };
-
-  const handleToggleModal = () => {
-    setIsModalOpen((prev) => !prev);
-  };
-
-  const handleDeleteMusic = (id: string) => {
-    setContentBlocks((prev) => prev.filter((block) => block.id !== id));
-  };
-
-  const handleSelectMusic = (item: MusicListFormItem) => {
-    setContentBlocks((prev) => {
-      if (prev.some((block) => block.type === 'music' && block.item.id === item.id)) return prev;
-      return [...prev, { id: crypto.randomUUID(), type: 'music', item }];
-    });
-    setIsModalOpen(false);
-  };
-
-  const handleAddTextBlock = () => {
-    setContentBlocks((prev) => [...prev, createTextBlock()]);
-  };
-
-  const handleChangeTextBlock = (id: string, content: string) => {
-    setContentBlocks((prev) => prev.map((block) => (
-      block.id === id && block.type === 'text'
-        ? { ...block, content }
-        : block
-    )));
-  };
-
-  const handleDeleteBlock = (id: string) => {
-    setContentBlocks((prev) => prev.filter((block) => block.id !== id));
   };
 
   const handleAddTag = () => {
@@ -215,45 +173,10 @@ export default function MusicListForm({
     }
   };
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(max-width: 767px)');
-    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
-    updateViewport();
-
-    mediaQuery.addEventListener('change', updateViewport);
-    return () => mediaQuery.removeEventListener('change', updateViewport);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (searchQuery.trim().length < 2) {
-        setSearchResults([]);
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/music/search?q=${encodeURIComponent(searchQuery)}&type=${searchType}`
-        );
-        if (!response.ok) throw new Error('search failed');
-        const mapped: MusicListFormItem[] = await response.json();
-        setSearchResults(mapped);
-      } catch (error) {
-        console.error(error);
-        setSearchResults([]);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, searchType]);
-
   return (
     <div className="flex items-center justify-center">
       <motion.div className="relative w-full rounded-2xl border border-gray-800 bg-[#121212] py-5 px-3 md:p-8">
         <h2 className="mb-6 font-sans text-2xl font-bold text-neon-point">{pageTitle}</h2>
-        <Link href="/editor-preview" target="_blank" rel="noopener noreferrer" className="mb-4 inline-flex text-sm text-gray-400 underline underline-offset-4 hover:text-white">
-          새 본문 에디터 미리보기 ↗
-        </Link>
 
         <div className="flex flex-col items-end justify-between sm:flex-row sm:items-center">
           <div className={`w-full ${lockType ? 'pointer-events-none opacity-70' : ''}`}>
@@ -302,95 +225,12 @@ export default function MusicListForm({
             value={form.title}
             onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
           />
-          <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3 sm:p-4">
-            <div>
-              <p className="text-base font-medium text-gray-300">본문 구성</p>
-              <p className="mt-1 text-sm text-gray-500">글과 음악을 추가한 뒤 드래그해 원하는 읽기 순서로 배치하세요.</p>
-            </div>
-
-            <Reorder.Group
-              axis="y"
-              values={contentBlocks}
-              onReorder={setContentBlocks}
-              className="flex flex-col gap-3"
-            >
-              {contentBlocks.map((block) => (
-                <Reorder.Item
-                  key={block.id}
-                  value={block}
-                  className={block.type === 'text'
-                    ? 'rounded-lg border border-white/10 bg-black/20 p-3'
-                    : 'flex cursor-grab items-center justify-between rounded-lg border border-[#1DB954]/30 bg-[#1DB954]/10 p-3 active:cursor-grabbing'}
-                >
-                  {block.type === 'text' ? (
-                    <div>
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="flex cursor-grab items-center gap-2 text-xs font-medium text-gray-400 active:cursor-grabbing">
-                          <GripVertical size={16} />
-                          <AlignLeft size={15} />
-                          글
-                        </span>
-                        <IconButton
-                          icon={<Trash2 size={17} />}
-                          onClick={() => handleDeleteBlock(block.id)}
-                          aria-label="글 블록 삭제"
-                        />
-                      </div>
-                      <Textarea
-                        value={block.content}
-                        placeholder="이 내용을 입력해주세요."
-                        onChange={(event) => handleChangeTextBlock(block.id, event.target.value)}
-                        className="min-h-28 sm:min-h-36"
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex min-w-0 items-center gap-3">
-                        <GripVertical size={16} className="shrink-0 text-gray-400" />
-                        <Image
-                          src={block.item.albumImageUrl}
-                          width={48}
-                          height={48}
-                          className="rounded shadow-lg"
-                          alt={block.item.name}
-                        />
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-bold text-white">{block.item.name}</div>
-                          <div className="truncate text-xs text-gray-400">{block.item.artist}</div>
-                        </div>
-                      </div>
-                      <IconButton
-                        icon={<Trash2 size={18} />}
-                        onClick={() => handleDeleteMusic(block.id)}
-                        aria-label={`${block.item.name} 삭제`}
-                      />
-                    </>
-                  )}
-                </Reorder.Item>
-              ))}
-            </Reorder.Group>
-
-            {contentBlocks.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-white/10 py-8 text-center text-sm text-gray-500">
-                글이나 음악을 추가해주세요.
-              </p>
-            ) : null}
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button variant="outline" color="white" icon={<Plus size={16} />} onClick={handleAddTextBlock}>
-                글 내용 추가
-              </Button>
-              <Button
-                variant="outline"
-                color="white"
-                icon={searchType === 'track' ? <Music size={16} /> : <Disc size={16} />}
-                onClick={handleToggleModal}
-              >
-                {searchType === 'track' ? '곡 추가' : '앨범 추가'}
-              </Button>
-            </div>
-          </div>
-
+          <RichTextEditor
+            key={searchType}
+            musicKind={searchType}
+            initialContent={contentBlocksToEditorDocument(initialValues?.contentBlocks ?? [], searchType)}
+            onChange={(document) => setContentBlocks(editorDocumentToContentBlocks(document))}
+          />
           {submitMethod === 'POST' && featuredSections.length > 0 ? (
             <div className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-4">
               <div className="flex items-start gap-3">
@@ -469,41 +309,6 @@ export default function MusicListForm({
         </form>
       </motion.div>
 
-      {isModalOpen &&
-        (isMobileViewport ? (
-          <div className="fixed inset-0 z-60 overflow-y-auto bg-[#070b16] px-4 py-4 sm:px-6 sm:py-6">
-            <div className="mx-auto w-full max-w-2xl h-full">
-              <div className="absolute right-6 top-6 z-70">
-                <IconButton
-                  icon={<X size={18} />}
-                  onClick={handleToggleModal}
-                  className="border-white/15 text-white hover:bg-white/10 text-[0px]"
-                />
-              </div>
-              <SearchMusic
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                searchType={searchType}
-                searchResults={searchResults}
-                setSearchResults={setSearchResults}
-                onClose={handleToggleModal}
-                onSelect={handleSelectMusic}
-              />
-            </div>
-          </div>
-        ) : (
-          <ModalWrap onClose={handleToggleModal} showCloseButton panelClassName="h-full">
-            <SearchMusic
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              searchType={searchType}
-              searchResults={searchResults}
-              setSearchResults={setSearchResults}
-              onClose={handleToggleModal}
-              onSelect={handleSelectMusic}
-            />
-          </ModalWrap>
-        ))}
     </div>
   );
 }
